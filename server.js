@@ -67,7 +67,8 @@ app.get('/courses', async (req, res) => {
 
         const response =
             await classroom.courses.list({
-                teacherId: 'me'
+                teacherId: 'me',
+                courseStates: ['ACTIVE']
             });
 
         const courses = response.data.courses || [];
