@@ -29,14 +29,16 @@ function loadSavedTokens() {
 
 const SCOPES = [
     'https://www.googleapis.com/auth/classroom.courses.readonly',
-    'https://www.googleapis.com/auth/classroom.topics.readonly',
-    'https://www.googleapis.com/auth/classroom.coursework.students.readonly',
+    'https://www.googleapis.com/auth/classroom.topics',
+    'https://www.googleapis.com/auth/classroom.courseworkmaterials',
+    'https://www.googleapis.com/auth/classroom.coursework.students',
     'https://www.googleapis.com/auth/classroom.student-submissions.students.readonly',
     'https://www.googleapis.com/auth/classroom.rosters.readonly',
     'https://www.googleapis.com/auth/drive.readonly'
 ];
 
 app.use(cors());
+app.use(express.json());
 
 app.get('/', (req, res) => {
 
@@ -52,6 +54,33 @@ app.get('/', (req, res) => {
       Login with Google
     </a>
   `);
+});
+
+app.get('/oauth2callback', async (req, res) => {
+
+    try {
+
+        const { code } = req.query;
+
+        if (!code) {
+            return res.status(400).send('Missing code');
+        }
+
+        const { tokens } = await oauth2Client.getToken(code);
+
+        console.log('REFRESH TOKEN:', tokens.refresh_token);
+
+        res.send(`
+            <h1>Listo</h1>
+            <p>Revisa la consola y pega el refresh_token en .env</p>
+        `);
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).send(error.message);
+    }
 });
 
 app.get('/courses', async (req, res) => {
@@ -110,6 +139,151 @@ app.get('/courses/:id/topics', async (req, res) => {
         console.error(error);
 
         res.status(500).send(error.message);
+    }
+});
+
+app.post('/courses/:courseId/topics', async (req, res) => {
+
+    try {
+
+        loadSavedTokens();
+
+        const classroom = google.classroom({
+            version: 'v1',
+            auth: oauth2Client
+        });
+
+        const { courseId } = req.params;
+        const { name } = req.body;
+
+        if (!name) {
+            return res.status(400).json({
+                error: 'name is required'
+            });
+        }
+
+        const response =
+            await classroom.courses.topics.create({
+                courseId,
+                requestBody: { name }
+            });
+
+        res.status(201).json(response.data);
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/courses/:courseId/materials', async (req, res) => {
+
+    try {
+
+        loadSavedTokens();
+
+        const classroom = google.classroom({
+            version: 'v1',
+            auth: oauth2Client
+        });
+
+        const { courseId } = req.params;
+
+        const {
+            title,
+            description,
+            topicId,
+            materials = [],
+            state = 'PUBLISHED'
+        } = req.body;
+
+        if (!title) {
+            return res.status(400).json({
+                error: 'title is required'
+            });
+        }
+
+        const response =
+            await classroom.courses.courseWorkMaterials.create({
+                courseId,
+                requestBody: {
+                    title,
+                    description,
+                    topicId,
+                    materials,
+                    state
+                }
+            });
+
+        res.status(201).json(response.data);
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/courses/:courseId/coursework', async (req, res) => {
+
+    try {
+
+        loadSavedTokens();
+
+        const classroom = google.classroom({
+            version: 'v1',
+            auth: oauth2Client
+        });
+
+        const { courseId } = req.params;
+
+        const {
+            title,
+            description,
+            topicId,
+            materials = [],
+            workType = 'ASSIGNMENT',
+            state = 'PUBLISHED',
+            maxPoints,
+            dueDate,
+            dueTime
+        } = req.body;
+
+        if (!title) {
+            return res.status(400).json({
+                error: 'title is required'
+            });
+        }
+
+        const requestBody = {
+            title,
+            description,
+            topicId,
+            materials,
+            workType,
+            state
+        };
+
+        if (maxPoints !== undefined) requestBody.maxPoints = maxPoints;
+        if (dueDate) requestBody.dueDate = dueDate;
+        if (dueTime) requestBody.dueTime = dueTime;
+
+        const response =
+            await classroom.courses.courseWork.create({
+                courseId,
+                requestBody
+            });
+
+        res.status(201).json(response.data);
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -332,7 +506,7 @@ app.get(
 
                 const safeStudentName =
                     studentName.replace(
-                        /[<>:"/\\\\|?*]/g,
+                        /[<>:"/\\|?*]/g,
                         '_'
                     );
 
@@ -352,7 +526,7 @@ app.get(
 
                     const safeFileName =
                         originalFileName.replace(
-                            /[<>:"/\\\\|?*]/g,
+                            /[<>:"/\\|?*]/g,
                             '_'
                         );
 
